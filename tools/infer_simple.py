@@ -127,8 +127,10 @@ def main():
         print("loading detectron weights %s" % args.load_detectron)
         load_detectron_weight(maskRCNN, args.load_detectron)
 
+
     maskRCNN = mynn.DataParallel(maskRCNN, cpu_keywords=['im_info', 'roidb'],
                                  minibatch=True, device_ids=[0])  # only support single GPU
+
 
     maskRCNN.eval()
     if args.image_dir:
@@ -160,7 +162,7 @@ def main():
             box_alpha=0.3,
             show_class=True,
             thresh=0.7,
-            kp_thresh=2
+            kp_thresh=2,
         )
 
     if args.merge_pdfs and num_images > 1:

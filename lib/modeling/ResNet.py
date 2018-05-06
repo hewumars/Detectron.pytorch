@@ -134,7 +134,7 @@ class ResNet_roi_conv5_head(nn.Module):
           residual_stage_detectron_mapping(self.res5, 'res5', 3, 5)
         return mapping_to_detectron, orphan_in_detectron
 
-    def forward(self, x, rpn_ret):
+    def forward(self, x, rpn_ret):#hw
         x = self.roi_xform(
             x, rpn_ret,
             blob_rois='rois',

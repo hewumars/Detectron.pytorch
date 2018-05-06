@@ -427,6 +427,8 @@ __C.MODEL.FASTER_RCNN = False
 # Indicates the model makes instance mask predictions (as in Mask R-CNN)
 __C.MODEL.MASK_ON = False
 
+__C.MODEL.LIGHT_HEAD_RCNN = False
+
 # Indicates the model makes keypoint predictions (as in Mask R-CNN for
 # keypoints)
 __C.MODEL.KEYPOINTS_ON = False
@@ -630,6 +632,14 @@ __C.FAST_RCNN.ROI_XFORM_SAMPLING_RATIO = 0
 __C.FAST_RCNN.ROI_XFORM_RESOLUTION = 14
 
 
+# ---------------------------------------------------------------------------- #
+#hw LIGHT_HEAD_RCNN options
+# ---------------------------------------------------------------------------- #
+__C.LIGHT_HEAD_RCNN = AttrDict()
+__C.LIGHT_HEAD_RCNN.ROI_BOX_HEAD = ''
+__C.LIGHT_HEAD_RCNN.MLP_HEAD_DIM = 1024
+__C.LIGHT_HEAD_RCNN.ROI_XFORM_RESOLUTION = 7
+__C.LIGHT_HEAD_RCNN.ROI_XFORM_METHOD = 'PSRoIPool'
 # ---------------------------------------------------------------------------- #
 # RPN options
 # ---------------------------------------------------------------------------- #

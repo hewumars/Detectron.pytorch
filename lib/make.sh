@@ -50,6 +50,15 @@ nvcc -c -o roi_crop_cuda_kernel.cu.o roi_crop_cuda_kernel.cu \
 cd ../
 python build.py
 
+# compile psroi_pooling 
+cd ../../
+cd model/psroi_pooling/src
+echo "Compiling psroi pooling kernels by nvcc..."
+nvcc -c -o psroi_pooling_kernel.cu.o psroi_pooling_kernel.cu \
+	 -D GOOGLE_CUDA=1 -x cu -Xcompiler -fPIC $CUDA_ARCH
+cd ../
+python build.py
+
 # compile roi_align (based on Caffe2's implementation)
 cd ../../
 cd modeling/roi_xfrom/roi_align/src
@@ -58,3 +67,7 @@ nvcc -c -o roi_align_kernel.cu.o roi_align_kernel.cu \
 	 -D GOOGLE_CUDA=1 -x cu -Xcompiler -fPIC $CUDA_ARCH
 cd ../
 python build.py
+
+
+
+

@@ -9,10 +9,13 @@ from torch.autograd import Variable
 from core.config import cfg
 from model.roi_pooling.functions.roi_pool import RoIPoolFunction
 from model.roi_crop.functions.roi_crop import RoICropFunction
+from model.psroi_pooling.functions.psroi_pooling import PSRoIPoolingFunction #hw
+from model.psroi_align_pooling.functions.psroi_align_pooling import PSRoiAlignPoolingFunction #hw
 from modeling.roi_xfrom.roi_align.functions.roi_align import RoIAlignFunction
 import modeling.rpn_heads as rpn_heads
 import modeling.fast_rcnn_heads as fast_rcnn_heads
 import modeling.mask_rcnn_heads as mask_rcnn_heads
+import modeling.light_head_rcnn_heads as light_head_rcnn_heads
 import modeling.keypoint_rcnn_heads as keypoint_rcnn_heads
 import utils.blob as blob_utils
 import utils.net as net_utils
@@ -72,12 +75,20 @@ class Generalized_RCNN(nn.Module):
             # may include extra scales that are used for RPN proposals, but not for RoI heads.
             self.Conv_Body.spatial_scale = self.Conv_Body.spatial_scale[-self.num_roi_levels:]
 
-        # BBOX Branch
+        # BBOX Branch  #hw RPN output to ROIPool layer
         if not cfg.MODEL.RPN_ONLY:
-            self.Box_Head = get_func(cfg.FAST_RCNN.ROI_BOX_HEAD)(
-                self.RPN.dim_out, self.roi_feature_transform, self.Conv_Body.spatial_scale)
-            self.Box_Outs = fast_rcnn_heads.fast_rcnn_outputs(
+            if cfg.MODEL.FASTER_RCNN:
+                self.Box_Head = get_func(cfg.FAST_RCNN.ROI_BOX_HEAD)(
+                    # hw ResNet_roi_conv5_head RPN网络输出roi和prob到ROIAlgin层
+                    self.RPN.dim_out, self.roi_feature_transform, self.Conv_Body.spatial_scale)
+                self.Box_Outs = fast_rcnn_heads.fast_rcnn_outputs(#hw 最后输出avgpool并输入到进入全连接层输出box和prob
                 self.Box_Head.dim_out)
+            elif cfg.MODEL.LIGHT_HEAD_RCNN:#hw
+                from nn.modules import xconv
+                ps_chl = 7 * 7 * 10
+                self.LightHead = xconv.large_separable_conv(chl_in=self.RPN.dim_in, ks=15, chl_mid=256, chl_out=ps_chl)
+                self.Box_Outs = light_head_rcnn_heads.light_head_rcnn_outputs(ps_chl,self.roi_feature_transform,self.Conv_Body.spatial_scale)
+
 
         # Mask Branch
         if cfg.MODEL.MASK_ON:
@@ -99,7 +110,8 @@ class Generalized_RCNN(nn.Module):
 
     def _init_modules(self):
         if cfg.MODEL.LOAD_IMAGENET_PRETRAINED_WEIGHTS:
-            resnet_utils.load_pretrained_imagenet_weights(self)
+            if cfg.MODEL.FASTER_RCNN:#hw
+                resnet_utils.load_pretrained_imagenet_weights(self)
             # Check if shared weights are equaled
             if cfg.MODEL.MASK_ON and getattr(self.Mask_Head, 'SHARE_RES5', False):
                 assert self.Mask_Head.res5.state_dict() == self.Box_Head.res5.state_dict()
@@ -123,9 +135,7 @@ class Generalized_RCNN(nn.Module):
 
         rpn_ret = self.RPN(blob_conv, im_info, roidb)
 
-        # if self.training:
-        #     # can be used to infer fg/bg ratio
-        #     return_dict['rois_label'] = rpn_ret['labels_int32']
+
 
         if cfg.FPN.FPN_ON:
             # Retain only the blobs that will be used for RoI heads. `blob_conv` may include
@@ -138,9 +148,17 @@ class Generalized_RCNN(nn.Module):
         if not cfg.MODEL.RPN_ONLY:
             if cfg.MODEL.SHARE_RES5 and self.training:
                 box_feat, res5_feat = self.Box_Head(blob_conv, rpn_ret)
-            else:
+            elif cfg.MODEL.FASTER_RCNN: #hw FAST_RCNN or LIGHT_HEAD_RCNN网络预测类别和坐标
                 box_feat = self.Box_Head(blob_conv, rpn_ret)
-            cls_score, bbox_pred = self.Box_Outs(box_feat)
+                cls_score, bbox_pred = self.Box_Outs(box_feat)
+                return_dict['cls_score'] = cls_score
+                return_dict['bbox_pred'] = bbox_pred
+            elif cfg.MODEL.LIGHT_HEAD_RCNN:
+                box_feat = F.relu(self.LightHead(blob_conv), inplace=True)
+                cls_score, bbox_pred = self.Box_Outs(box_feat,rpn_ret)
+                return_dict['cls_score'] = cls_score
+                return_dict['bbox_pred'] = bbox_pred
+
         else:
             # TODO: complete the returns for RPN only situation
             pass
@@ -152,7 +170,7 @@ class Generalized_RCNN(nn.Module):
             rpn_kwargs.update(dict(
                 (k, rpn_ret[k]) for k in rpn_ret.keys()
                 if (k.startswith('rpn_cls_logits') or k.startswith('rpn_bbox_pred'))
-            ))
+            )) #hw RPN网络类别和坐标的损失值计算
             loss_rpn_cls, loss_rpn_bbox = rpn_heads.generic_rpn_losses(**rpn_kwargs)
             if cfg.FPN.FPN_ON:
                 for i, lvl in enumerate(range(cfg.FPN.RPN_MIN_LEVEL, cfg.FPN.RPN_MAX_LEVEL + 1)):
@@ -162,13 +180,23 @@ class Generalized_RCNN(nn.Module):
                 return_dict['losses']['loss_rpn_cls'] = loss_rpn_cls
                 return_dict['losses']['loss_rpn_bbox'] = loss_rpn_bbox
 
-            # bbox loss
-            loss_cls, loss_bbox, accuracy_cls = fast_rcnn_heads.fast_rcnn_losses(
+            # bbox loss #hw RCNN网络类别和坐标的损失值计算
+            if cfg.MODEL.FASTER_RCNN:
+                # bbox loss
+                loss_cls, loss_bbox, accuracy_cls = fast_rcnn_heads.fast_rcnn_losses(
+                    cls_score, bbox_pred, rpn_ret['labels_int32'], rpn_ret['bbox_targets'],
+                    rpn_ret['bbox_inside_weights'], rpn_ret['bbox_outside_weights'])
+                return_dict['losses']['loss_cls'] = loss_cls
+                return_dict['losses']['loss_bbox'] = loss_bbox
+                return_dict['metrics']['accuracy_cls'] = accuracy_cls
+            elif cfg.MODEL.LIGHT_HEAD_RCNN:  # hw
+                loss_cls, loss_bbox = light_head_rcnn_heads.light_head_rcnn_losses(
                 cls_score, bbox_pred, rpn_ret['labels_int32'], rpn_ret['bbox_targets'],
                 rpn_ret['bbox_inside_weights'], rpn_ret['bbox_outside_weights'])
-            return_dict['losses']['loss_cls'] = loss_cls
-            return_dict['losses']['loss_bbox'] = loss_bbox
-            return_dict['metrics']['accuracy_cls'] = accuracy_cls
+                return_dict['losses']['loss_cls'] = loss_cls
+                return_dict['losses']['loss_bbox'] = loss_bbox
+
+
 
             if cfg.MODEL.MASK_ON:
                 if getattr(self.Mask_Head, 'SHARE_RES5', False):
@@ -218,7 +246,7 @@ class Generalized_RCNN(nn.Module):
           - Use of FPN or not
           - Specifics of the transform method
         """
-        assert method in {'RoIPoolF', 'RoICrop', 'RoIAlign'}, \
+        assert method in {'RoIPoolF', 'RoICrop', 'RoIAlign','PSRoIPool','PSRoIAlignPool'}, \
             'Unknown pooling method: {}'.format(method)
 
         if isinstance(blobs_in, list):
@@ -249,7 +277,15 @@ class Generalized_RCNN(nn.Module):
                     elif method == 'RoIAlign':
                         xform_out = RoIAlignFunction(
                             resolution, resolution, sc, sampling_ratio)(bl_in, rois)
+                    elif method == 'PSRoIPool':#hw add Light-Head-RCNN
+                        xform_out = PSRoIPoolingFunction(
+                            resolution, resolution, sc,resolution)(bl_in, rois)
+                    elif method == 'PSRoIAlignPool':  # hw add Light-Head-RCNN
+                        xform_out = PSRoiAlignPoolingFunction(
+                        resolution, resolution,2,2, sc, resolution)(bl_in, rois)
                     bl_out_list.append(xform_out)
+
+
 
             # The pooled features from all levels are concatenated along the
             # batch dimension into a single 4D tensor.
@@ -280,6 +316,12 @@ class Generalized_RCNN(nn.Module):
             elif method == 'RoIAlign':
                 xform_out = RoIAlignFunction(
                     resolution, resolution, spatial_scale, sampling_ratio)(blobs_in, rois)
+            elif method == 'PSRoIPool':  # hw add Light-Head-RCNN
+                xform_out = PSRoIPoolingFunction(
+                    resolution, resolution, spatial_scale, resolution)(blobs_in, rois)
+            elif method == 'PSRoIAlignPool':  # hw add Light-Head-RCNN
+                xform_out = PSRoiAlignPoolingFunction(
+                    resolution, resolution, 2, 2, spatial_scale, resolution)(blobs_in, rois)
 
         return xform_out
 

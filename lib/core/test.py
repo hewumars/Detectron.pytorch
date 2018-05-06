@@ -116,7 +116,7 @@ def im_detect_bbox(model, im, target_scale, target_max_size, boxes=None):
 
     inputs, im_scale = _get_blobs(im, boxes, target_scale, target_max_size)
 
-    if cfg.DEDUP_BOXES > 0 and not cfg.MODEL.FASTER_RCNN:
+    if cfg.DEDUP_BOXES > 0 and not cfg.MODEL.FASTER_RCNN and not cfg.MODEL.LIGHT_HEAD_RCNN:
         v = np.array([1, 1e3, 1e6, 1e9, 1e12])
         hashes = np.round(inputs['rois'] * cfg.DEDUP_BOXES).dot(v)
         _, index, inv_index = np.unique(
@@ -126,7 +126,7 @@ def im_detect_bbox(model, im, target_scale, target_max_size, boxes=None):
         boxes = boxes[index, :]
 
     # Add multi-level rois for FPN
-    if cfg.FPN.MULTILEVEL_ROIS and not cfg.MODEL.FASTER_RCNN:
+    if cfg.FPN.MULTILEVEL_ROIS and not cfg.MODEL.FASTER_RCNN and not cfg.MODEL.LIGHT_HEAD_RCNN:
         _add_multilevel_rois_for_test(inputs, 'rois')
 
     inputs['data'] = [Variable(torch.from_numpy(inputs['data']), volatile=True)]
@@ -134,7 +134,7 @@ def im_detect_bbox(model, im, target_scale, target_max_size, boxes=None):
 
     return_dict = model(**inputs)
 
-    if cfg.MODEL.FASTER_RCNN:
+    if cfg.MODEL.FASTER_RCNN or cfg.MODEL.LIGHT_HEAD_RCNN:
         rois = return_dict['rois'].data.cpu().numpy()
         # unscale back to raw image space
         boxes = rois[:, 1:5] / im_scale
@@ -164,7 +164,7 @@ def im_detect_bbox(model, im, target_scale, target_max_size, boxes=None):
         # Simply repeat the boxes, once for each class
         pred_boxes = np.tile(boxes, (1, scores.shape[1]))
 
-    if cfg.DEDUP_BOXES > 0 and not cfg.MODEL.FASTER_RCNN:
+    if cfg.DEDUP_BOXES > 0 and not cfg.MODEL.FASTER_RCNN and not cfg.MODEL.LIGHT_HEAD_RCNN:
         # Map scores and predictions back to the original set of boxes
         scores = scores[inv_index, :]
         pred_boxes = pred_boxes[inv_index, :]

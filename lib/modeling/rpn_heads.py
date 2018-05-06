@@ -58,6 +58,7 @@ class single_scale_rpn_outputs(nn.Module):
         self.RPN_GenerateProposals = GenerateProposalsOp(anchors, spatial_scale)
         self.RPN_GenerateProposalLabels = GenerateProposalLabelsOp()
 
+
         self._init_weights()
 
     def _init_weights(self):
@@ -95,7 +96,7 @@ class single_scale_rpn_outputs(nn.Module):
         return_dict = {
             'rpn_cls_logits': rpn_cls_logits, 'rpn_bbox_pred': rpn_bbox_pred}
 
-        if not self.training or cfg.MODEL.FASTER_RCNN:
+        if not self.training or cfg.MODEL.FASTER_RCNN or cfg.MODEL.LIGHT_HEAD_RCNN:
             # Proposals are needed during:
             #  1) inference (== not model.train) for RPN only and Faster R-CNN
             #  OR
@@ -108,21 +109,25 @@ class single_scale_rpn_outputs(nn.Module):
                 rpn_cls_prob = rpn_cls_prob[:, 1].squeeze(dim=1)
             else:
                 rpn_cls_prob = F.sigmoid(rpn_cls_logits)
-
+            #hw获得候选区域
             rpn_rois, rpn_rois_prob = self.RPN_GenerateProposals(
                 rpn_cls_prob, rpn_bbox_pred, im_info)
 
             return_dict['rpn_rois'] = rpn_rois
             return_dict['rpn_roi_probs'] = rpn_rois_prob
 
-        if cfg.MODEL.FASTER_RCNN :
-            if self.training:
+        if cfg.MODEL.FASTER_RCNN or cfg.MODEL.LIGHT_HEAD_RCNN:
+            if self.training:#hw生成真实标签和预测数据的字典
                 # Add op that generates training labels for in-network RPN proposals
                 blobs_out = self.RPN_GenerateProposalLabels(rpn_rois, roidb, im_info)
                 return_dict.update(blobs_out)
             else:
                 # Alias rois to rpn_rois for inference
                 return_dict['rois'] = return_dict['rpn_rois']
+
+
+
+
 
         return return_dict
 
