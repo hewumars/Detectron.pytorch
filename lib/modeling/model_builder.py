@@ -84,10 +84,9 @@ class Generalized_RCNN(nn.Module):
                 self.Box_Outs = fast_rcnn_heads.fast_rcnn_outputs(#hw 最后输出avgpool并输入到进入全连接层输出box和prob
                 self.Box_Head.dim_out)
             elif cfg.MODEL.LIGHT_HEAD_RCNN:#hw
-                from nn.modules import xconv
-                ps_chl = 7 * 7 * 10
-                self.LightHead = xconv.large_separable_conv(chl_in=self.RPN.dim_in, ks=15, chl_mid=256, chl_out=ps_chl)
-                self.Box_Outs = light_head_rcnn_heads.light_head_rcnn_outputs(ps_chl,self.roi_feature_transform,self.Conv_Body.spatial_scale)
+                from modeling.light_head_rcnn_heads import ResNet_Conv5_light_head
+                self.LightHead = ResNet_Conv5_light_head(self.Conv_Body.dim_out)
+                self.Box_Outs = light_head_rcnn_heads.light_head_rcnn_outputs(490,self.roi_feature_transform,self.Conv_Body.spatial_scale)
 
 
         # Mask Branch

@@ -25,6 +25,61 @@ import utils.net as net_utils
 # fc_new_1_relu = mx.sym.Activation(data=fc_new_1, act_type='relu', name='fc_new_1_relu')
 # cls_score = mx.symbol.FullyConnected(name='cls_score', data=fc_new_1_relu, num_hidden=num_classes)
 # bbox_pred = mx.symbol.FullyConnected(name='bbox_pred', data=fc_new_1_relu, num_hidden=num_reg_classes * 4)
+from .ResNet import add_stage,freeze_params,mynn,residual_stage_detectron_mapping
+class large_separable_conv(nn.Module):
+    def __init__(self,chl_in,  ks=15, chl_mid=256, chl_out=1024):
+        super().__init__()
+        pad=(ks-1)//2
+        self.col_max = nn.Conv2d(chl_in,chl_mid,(ks,1),padding=(pad,0))
+        self.col     = nn.Conv2d(chl_mid,chl_out,(1,ks),padding=(0,pad))
+        self.row_max = nn.Conv2d(chl_in,chl_mid,(1,ks),padding=(pad,0))
+        self.row     = nn.Conv2d(chl_mid,chl_out,(ks,1),padding=(0,pad))
+
+    def detectron_weight_mapping(self):
+        detectron_weight_mapping = {
+            'col_max.weight':'col_max_w',
+            'col_max.bias': 'col_max_b',
+            'col.weight': 'col_w',
+            'col.bias': 'col_b',
+            'row_max.weight': 'row_max_w',
+            'row_max.bias': 'row_max_b',
+            'row.weight': 'row_w',
+            'row.bias': 'row_b',
+        }
+        return detectron_weight_mapping,[]
+
+    def forward(self, x):
+        y1 = self.col(self.col_max(x))
+        y2 = self.row(self.row_max(x))
+        return y1+y2
+
+
+class ResNet_Conv5_light_head(nn.Module):
+    def __init__(self,dim_in):
+        super().__init__()
+        dim_bottleneck = cfg.RESNETS.NUM_GROUPS * cfg.RESNETS.WIDTH_PER_GROUP
+        stride_init = cfg.LIGHT_HEAD_RCNN.ROI_XFORM_RESOLUTION // 7
+        self.res5, self.dim_out = add_stage(dim_in, dim_bottleneck * 8, 3, stride_init)
+        assert self.dim_out == 2048
+        self.ps_chl = 7 * 7 * 10
+        self.xconv = large_separable_conv(chl_in=self.dim_out, ks=15, chl_mid=256, chl_out=self.ps_chl)
+        self._init_modules()
+
+    def _init_modules(self):
+        # Freeze all bn (affine) layers !!!
+        self.apply(lambda m: freeze_params(m) if isinstance(m, mynn.AffineChannel2d) else None)
+
+    def detectron_weight_mapping(self):
+        mapping_to_detectron, orphan_in_detectron = \
+          residual_stage_detectron_mapping(self.res5, 'res5', 3, 5)
+        return mapping_to_detectron, orphan_in_detectron
+
+    def forward(self,x):
+        res5_feat = self.res5(x)
+        return self.xconv(res5_feat)
+
+
+
 
 class light_head_rcnn_outputs(nn.Module):
     def __init__(self, dim_in,roi_xform_func,spatial_scale):
@@ -89,5 +144,5 @@ def light_head_rcnn_losses(cls_score, bbox_pred, label_int32, bbox_targets,
     bbox_outside_weights = Variable(torch.from_numpy(bbox_outside_weights)).cuda(device_id)
     loss_bbox = net_utils.smooth_l1_loss(
         bbox_pred, bbox_targets, bbox_inside_weights, bbox_outside_weights)
-    return loss_cls, loss_bbox*2
+    return loss_cls, loss_bbox*5
 
