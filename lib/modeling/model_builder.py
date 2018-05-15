@@ -122,6 +122,13 @@ class Generalized_RCNN(nn.Module):
                 p.requires_grad = False
 
     def forward(self, data, im_info, roidb=None, **rpn_kwargs):
+        if cfg.PYTORCH_VERSION_LESS_THAN_040:
+            return self._forward(data, im_info, roidb, **rpn_kwargs)
+        else:
+            with torch.set_grad_enabled(self.training):
+                return self._forward(data, im_info, roidb, **rpn_kwargs)
+
+    def _forward(self, data, im_info, roidb=None, **rpn_kwargs):
         im_data = data
         if self.training:
             roidb = list(map(lambda x: blob_utils.deserialize(x)[0], roidb))
@@ -228,6 +235,13 @@ class Generalized_RCNN(nn.Module):
                         kps_pred, rpn_ret['keypoint_locations_int32'], rpn_ret['keypoint_weights'],
                         rpn_ret['keypoint_loss_normalizer'])
                 return_dict['losses']['loss_kps'] = loss_keypoints
+
+            # pytorch0.4 bug on gathering scalar(0-dim) tensors
+            for k, v in return_dict['losses'].items():
+                return_dict['losses'][k] = v.unsqueeze(0)
+            for k, v in return_dict['metrics'].items():
+                return_dict['metrics'][k] = v.unsqueeze(0)
+
         else:
             # Testing
             return_dict['rois'] = rpn_ret['rois']

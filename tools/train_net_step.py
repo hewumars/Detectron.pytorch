@@ -23,7 +23,7 @@ import utils.net as net_utils
 import utils.misc as misc_utils
 from core.config import cfg, cfg_from_file, cfg_from_list, assert_and_infer_cfg
 from datasets.roidb import combined_roidb_for_training
-from roi_data.loader import RoiDataLoader, MinibatchSampler, collate_minibatch
+from roi_data.loader import RoiDataLoader, MinibatchSampler, BatchSampler, collate_minibatch
 from modeling.model_builder import Generalized_RCNN
 from utils.detectron_weight_helper import load_detectron_weight
 from utils.logging import setup_logging
@@ -200,21 +200,19 @@ def main():
           '    SOLVER.MAX_ITER: {} --> {}'.format(old_solver_steps, cfg.SOLVER.STEPS,
                                                   old_max_iter, cfg.SOLVER.MAX_ITER))
 
-    ### Adjust RPN settings based on IMS_PER_BATCH change
-    original_rpn_pre_nms_top_n = cfg.TRAIN.RPN_PRE_NMS_TOP_N
-    original_rpn_post_nms_top_n = cfg.TRAIN.RPN_POST_NMS_TOP_N
-    rpn_scale = cfg.TRAIN.IMS_PER_BATCH / original_ims_per_batch
-    cfg.TRAIN.RPN_PRE_NMS_TOP_N = int(cfg.TRAIN.RPN_PRE_NMS_TOP_N * rpn_scale + 0.5)
-    cfg.TRAIN.RPN_POST_NMS_TOP_N = int(cfg.TRAIN.RPN_POST_NMS_TOP_N * rpn_scale + 0.5)
-    print('Adjust TRAIN.RPN_PRE_NMS_TOP_N and TRAIN.RPN_POST_NMS_TOP_N linearly based on IMS_PER_BATCH change:\n'
-          '    TRAIN.RPN_PRE_NMS_TOP_N: {} --> {}\n'
-          '    TRAIN.RPN_POST_NMS_TOP_N: {} --> {}'.format(original_rpn_pre_nms_top_n, cfg.TRAIN.RPN_PRE_NMS_TOP_N,
-                                                           original_rpn_post_nms_top_n, cfg.TRAIN.RPN_POST_NMS_TOP_N))
+    # Scale FPN rpn_proposals collect size (post_nms_topN) in `collect` function
+    # of `collect_and_distribute_fpn_rpn_proposals.py`
+    #
+    # post_nms_topN = int(cfg[cfg_key].RPN_POST_NMS_TOP_N * cfg.FPN.RPN_COLLECT_SCALE + 0.5)
+    if cfg.FPN.FPN_ON and cfg.MODEL.FASTER_RCNN:
+        cfg.FPN.RPN_COLLECT_SCALE = cfg.TRAIN.IMS_PER_BATCH / original_ims_per_batch
+        print('Scale FPN rpn_proposals collect size directly propotional to the change of IMS_PER_BATCH:\n'
+              '    cfg.FPN.RPN_COLLECT_SCALE: {}'.format(cfg.FPN.RPN_COLLECT_SCALE))
 
     if args.num_workers is not None:
         cfg.DATA_LOADER.NUM_THREADS = args.num_workers
     print('Number of data loading threads: %d' % cfg.DATA_LOADER.NUM_THREADS)
-    
+
     ### Overwrite some solver settings from command line arguments
     if args.optimizer is not None:
         cfg.SOLVER.TYPE = args.optimizer
@@ -238,16 +236,18 @@ def main():
     # Effective training sample size for one epoch
     train_size = roidb_size // args.batch_size * args.batch_size
 
-    sampler = MinibatchSampler(ratio_list, ratio_index)
+    batchSampler = BatchSampler(
+        sampler=MinibatchSampler(ratio_list, ratio_index),
+        batch_size=args.batch_size,
+        drop_last=True
+    )
     dataset = RoiDataLoader(
         roidb,
         cfg.MODEL.NUM_CLASSES,
         training=True)
     dataloader = torch.utils.data.DataLoader(
         dataset,
-        batch_size=args.batch_size,
-        drop_last=True,
-        sampler=sampler,
+        batch_sampler=batchSampler,
         num_workers=cfg.DATA_LOADER.NUM_THREADS,
         collate_fn=collate_minibatch)
     dataiterator = iter(dataloader)

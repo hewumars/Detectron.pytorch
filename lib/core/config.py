@@ -10,6 +10,9 @@ import copy
 from ast import literal_eval
 
 import numpy as np
+from packaging import version
+import torch
+from torch.nn import init
 import yaml
 
 from utils.collections import AttrDict
@@ -126,11 +129,11 @@ __C.TRAIN.RPN_BATCH_SIZE_PER_IM = 256
 # NMS threshold used on RPN proposals (used during end-to-end training with RPN)
 __C.TRAIN.RPN_NMS_THRESH = 0.7
 
-# Number of top scoring RPN proposals to keep before applying NMS
+# Number of top scoring RPN proposals to keep before applying NMS (per image)
 # When FPN is used, this is *per FPN level* (not total)
 __C.TRAIN.RPN_PRE_NMS_TOP_N = 12000
 
-# Number of top scoring RPN proposals to keep after applying NMS
+# Number of top scoring RPN proposals to keep after applying NMS (per image)
 # This is the total number of RPN proposals produced (for both FPN and non-FPN
 # cases)
 __C.TRAIN.RPN_POST_NMS_TOP_N = 2000
@@ -716,6 +719,9 @@ __C.FPN.RPN_ASPECT_RATIOS = (0.5, 1, 2)
 # The anchor size doubled each level after that
 # With a default of 32 and levels 2 to 6, we get anchor sizes of 32 to 512
 __C.FPN.RPN_ANCHOR_START_SIZE = 32
+# [Infered Value] Scale for RPN_POST_NMS_TOP_N.
+# Automatically infered in training, fixed to 1 in testing.
+__C.FPN.RPN_COLLECT_SCALE = 1
 # Use extra FPN levels, as done in the RetinaNet paper
 __C.FPN.EXTRA_CONV_LEVELS = False
 
@@ -963,6 +969,8 @@ __C.CUDA = False
 
 __C.DEBUG = False
 
+# [Infered value]
+__C.PYTORCH_VERSION_LESS_THAN_040 = False
 
 # ---------------------------------------------------------------------------- #
 # mask heads or keypoint heads that share res5 stage weights and
@@ -992,6 +1000,12 @@ def assert_and_infer_cfg(make_immutable=True):
             "Path to the weight file must not be empty to load imagenet pertrained resnets."
     if set([__C.MRCNN.ROI_MASK_HEAD, __C.KRCNN.ROI_KEYPOINTS_HEAD]) & _SHARE_RES5_HEADS:
         __C.MODEL.SHARE_RES5 = True
+    if version.parse(torch.__version__) < version.parse('0.4.0'):
+        __C.PYTORCH_VERSION_LESS_THAN_040 = True
+        # create alias for PyTorch version less than 0.4.0
+        init.uniform_ = init.uniform
+        init.normal_ = init.normal
+        init.constant_ = init.constant
     if make_immutable:
         cfg.immutable(True)
 
