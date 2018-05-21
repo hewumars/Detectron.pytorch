@@ -36,6 +36,7 @@ PRETRAINED_WEIGHTS = {
     'resnet101_caffe.pth': '1x2fTMqLrn63EMW0VuK4GEa2eQKzvJ_7l',
     'resnet152_caffe.pth': '1NSCycOb7pU0KzluH326zmyMFUU55JslF',
     'vgg16_caffe.pth': '19UphT53C0Ua9JAtICnw84PPTa3sZZ_9k',
+    'vgg_SCNN_DULR_w9.t7':'1Wv3r3dCYNBwJdKl_WPEfrEOt-XGaROKu',
 }
 
 

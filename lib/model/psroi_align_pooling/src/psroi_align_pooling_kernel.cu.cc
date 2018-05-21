@@ -127,7 +127,11 @@ __global__ void PSAlignPoolingForward(
         float sample_w_rate = 1.0f / float(sample_width);
         float hcenter;
         float wcenter;
-        int c = (ctop*group_size + ph)*group_size + pw;
+        int gw = floor(static_cast<float>(pw) * group_size / pooled_width);
+        int gh = floor(static_cast<float>(ph)* group_size / pooled_height);
+        gw = min(max(gw, 0), group_size - 1);
+        gh = min(max(gh, 0), group_size - 1);
+        int c = (ctop*group_size + gh)*group_size + gw;
 
         float tmp = float(-1e20);
         float tmp2;

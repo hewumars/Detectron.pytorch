@@ -60,8 +60,10 @@ __global__ void PSROIPoolForward(const int nthreads, const float* bottom_data,
       	wend = min(max(wend, 0), width);
         bool is_empty = (hend <= hstart) || (wend <= wstart);
 
-        int gw = pw;
-      	int gh = ph;
+      	int gw = floor(static_cast<float>(pw) * group_size / pooled_width);
+        int gh = floor(static_cast<float>(ph)* group_size / pooled_height);
+        gw = min(max(gw, 0), group_size - 1);
+        gh = min(max(gh, 0), group_size - 1);
       	int c = (ctop*group_size + gh)*group_size + gw;
 
         bottom_data += (roi_batch_ind * channels + c) * height * width;

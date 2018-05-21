@@ -37,14 +37,14 @@ class large_separable_conv(nn.Module):
 
     def detectron_weight_mapping(self):
         detectron_weight_mapping = {
-            'col_max.weight':'col_max_w',
-            'col_max.bias': 'col_max_b',
-            'col.weight': 'col_w',
-            'col.bias': 'col_b',
-            'row_max.weight': 'row_max_w',
-            'row_max.bias': 'row_max_b',
-            'row.weight': 'row_w',
-            'row.bias': 'row_b',
+            'xconv.col_max.weight':'col_max_w',
+            'xconv.col_max.bias': 'col_max_b',
+            'xconv.col.weight': 'col_w',
+            'xconv.col.bias': 'col_b',
+            'xconv.row_max.weight': 'row_max_w',
+            'xconv.row_max.bias': 'row_max_b',
+            'xconv.row.weight': 'row_w',
+            'xconv.row.bias': 'row_b',
         }
         return detectron_weight_mapping,[]
 
